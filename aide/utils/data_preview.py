@@ -67,7 +67,21 @@ def preview_csv(p: Path, file_name: str, simple=True) -> str:
     Returns:
         str: the textual preview
     """
-    df = pd.read_csv(p)
+    # Try to read CSV with error handling for malformed data
+    # Limit rows to prevent huge data previews (especially for text-heavy datasets)
+    MAX_PREVIEW_ROWS = 10  # Heavily reduced to prevent 413 errors with text-heavy data like essays
+    
+    try:
+        # First try with default settings, limit rows for preview
+        df = pd.read_csv(p, nrows=MAX_PREVIEW_ROWS)
+    except (pd.errors.ParserError, ValueError) as e:
+        # If parsing fails, try with more robust settings
+        try:
+            # Use Python engine which is more forgiving, and handle quoting
+            df = pd.read_csv(p, engine='python', on_bad_lines='skip', encoding_errors='ignore', nrows=MAX_PREVIEW_ROWS)
+        except Exception as e2:
+            # If still fails, return error message instead of crashing
+            return f"-> {file_name}: Unable to parse CSV file (error: {str(e)[:100]})"
 
     out = []
 
@@ -101,8 +115,11 @@ def preview_csv(p: Path, file_name: str, simple=True) -> str:
                     f"{name} has range: {df[col].min():.2f} - {df[col].max():.2f}, {nan_count} nan values"
                 )
             elif dtype == "object":
+                # Truncate long text values to prevent huge previews (especially essays/reviews)
+                example_values = df[col].value_counts().head(2).index.tolist()  # Reduced from 4 to 2 examples
+                truncated_examples = [str(v)[:50] + '...' if len(str(v)) > 50 else str(v) for v in example_values]  # Reduced from 100 to 50 chars
                 out.append(
-                    f"{name} has {df[col].nunique()} unique values. Some example values: {df[col].value_counts().head(4).index.tolist()}"
+                    f"{name} has {df[col].nunique()} unique values. Example: {truncated_examples[0] if truncated_examples else 'N/A'}"
                 )
 
     return "\n".join(out)
@@ -118,7 +135,7 @@ def preview_json(p: Path, file_name: str):
     )
 
 
-def generate(base_path, include_file_details=True, simple=False):
+def generate(base_path, include_file_details=True, simple=True):
     """
     Generate a textual preview of a directory, including an overview of the directory
     structure and previews of individual files

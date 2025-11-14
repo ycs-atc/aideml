@@ -17,10 +17,10 @@ from . import copytree, preproc_data, serialize
 
 shutup.mute_warnings()
 logging.basicConfig(
-    level="WARNING", format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
+    level="DEBUG", format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
 )
 logger = logging.getLogger("aide")
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG)
 
 
 """ these dataclasses are just for type hinting, the actual config is in config.yaml """
