@@ -28,9 +28,11 @@ OPENAI_TIMEOUT_EXCEPTIONS = (
 @once
 def _setup_openai_client():
     global _client
-    # Use real OpenAI API with proper API key, explicitly override base_url
+    # Use real OpenAI API with proper API key, check for custom base_url first
     api_key = os.getenv("OPENAI_API_KEY")
-    _client = openai.OpenAI(api_key=api_key, base_url=OPENAI_BASE_URL, max_retries=0)
+    base_url = os.getenv("OPENAI_BASE_URL", OPENAI_BASE_URL)  # Use custom URL if set, otherwise default
+    # Set timeout to 5 minutes (300 seconds) to prevent indefinite hangs
+    _client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=0, timeout=300.0)
 
 
 @once
@@ -40,8 +42,9 @@ def _setup_custom_client():
     base_url = os.getenv("OPENAI_BASE_URL")
     api_key = os.getenv("OPENAI_API_KEY")
     if base_url:
+        # Set timeout to 5 minutes (300 seconds) to prevent indefinite hangs
         _custom_client = openai.OpenAI(
-            api_key=api_key, base_url=base_url, max_retries=0
+            api_key=api_key, base_url=base_url, max_retries=0, timeout=300.0
         )
 
 
@@ -62,8 +65,11 @@ def query(
     if "max_tokens" in filtered_kwargs:
         filtered_kwargs["max_output_tokens"] = filtered_kwargs.pop("max_tokens")
 
+    # Remove temperature for models that don't support it
+    # This includes o1/o3 series, gpt-5 series, and codex-mini-latest
     if (
         re.match(r"^o\d", filtered_kwargs["model"])
+        or re.match(r"^gpt-5", filtered_kwargs["model"])
         or filtered_kwargs["model"] == "codex-mini-latest"
     ):
         filtered_kwargs.pop("temperature", None)
@@ -92,7 +98,11 @@ def query(
             filtered_kwargs["tools"] = [func_spec.as_openai_responses_tool_dict]
             filtered_kwargs["tool_choice"] = func_spec.openai_responses_tool_choice_dict
 
-    logger.info(f"OpenAI API request: system={system_message}, user={user_message}")
+    # Log request details for debugging
+    prompt_length = len(str(system_message or "")) + len(str(user_message or ""))
+    logger.info(f"OpenAI API request: model={filtered_kwargs.get('model')}, prompt_length={prompt_length}, has_func_spec={func_spec is not None}")
+    if prompt_length > 50000:
+        logger.warning(f"Large prompt detected ({prompt_length} chars) - this may cause timeouts")
 
     t0 = time.time()
 

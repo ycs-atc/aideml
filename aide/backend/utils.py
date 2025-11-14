@@ -17,16 +17,21 @@ logger = logging.getLogger("aide")
 @backoff.on_predicate(
     wait_gen=backoff.expo,
     max_value=60,
+    max_tries=5,  # Limit to 5 retry attempts to prevent infinite loops
     factor=1.5,
 )
 def backoff_create(
     create_fn: Callable, retry_exceptions: list[Exception], *args, **kwargs
 ):
     try:
-        return create_fn(*args, **kwargs)
+        result = create_fn(*args, **kwargs)
+        return result
     except retry_exceptions as e:
-        logger.info(f"Backoff exception: {e}")
+        logger.warning(f"API call failed (will retry): {type(e).__name__}: {e}")
         return False
+    except Exception as e:
+        logger.error(f"API call failed with non-retryable error: {type(e).__name__}: {e}")
+        raise
 
 
 def opt_messages_to_list(
