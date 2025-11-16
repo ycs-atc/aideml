@@ -22,7 +22,20 @@ def get_file_len_size(f: Path) -> tuple[int, str]:
     Also returns a human-readable string representation of the size.
     """
     if f.suffix in plaintext_files:
-        num_lines = sum(1 for _ in open(f))
+        # Try multiple encodings to handle non-UTF-8 files
+        num_lines = None
+        for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+            try:
+                num_lines = sum(1 for _ in open(f, encoding=encoding))
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        
+        # If all encodings fail, fall back to byte size
+        if num_lines is None:
+            s = f.stat().st_size
+            return s, humanize.naturalsize(s)
+        
         return num_lines, f"{num_lines} lines"
     else:
         s = f.stat().st_size
