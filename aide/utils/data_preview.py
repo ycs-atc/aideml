@@ -139,13 +139,61 @@ def preview_csv(p: Path, file_name: str, simple=True) -> str:
 
 
 def preview_json(p: Path, file_name: str):
-    """Generate a textual preview of a json file using a generated json schema"""
+    """Generate a textual preview of a json file using a generated json schema.
+    Supports both standard JSON and JSONL (JSON Lines) formats.
+    """
     builder = SchemaBuilder()
-    with open(p) as f:
-        builder.add_object(json.load(f))
-    return f"-> {file_name} has auto-generated json schema:\n" + builder.to_json(
-        indent=2
-    )
+    
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            # Try to detect JSONL format (JSON Lines - one object per line)
+            first_line = f.readline().strip()
+            if not first_line:
+                return f"-> {file_name}: Empty file"
+            
+            # Try parsing first line as JSON
+            try:
+                first_obj = json.loads(first_line)
+                # Check if there's a second line (indicates JSONL format)
+                second_line = f.readline().strip()
+                is_jsonl = bool(second_line)
+                
+                if is_jsonl:
+                    # JSONL format: parse each line as a separate JSON object
+                    f.seek(0)  # Reset to beginning
+                    line_count = 0
+                    max_lines = 100  # Limit number of lines to process for schema generation
+                    
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            obj = json.loads(line)
+                            builder.add_object(obj)
+                            line_count += 1
+                            if line_count >= max_lines:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+                    
+                    schema = builder.to_json(indent=2)
+                    return f"-> {file_name} is a JSONL file (JSON Lines format) with auto-generated json schema:\n{schema}"
+                else:
+                    # Single JSON object on first line, but no second line - treat as single object
+                    builder.add_object(first_obj)
+            except json.JSONDecodeError:
+                # First line is not valid JSON, try as standard JSON file
+                f.seek(0)
+                try:
+                    data = json.load(f)
+                    builder.add_object(data)
+                except json.JSONDecodeError as e:
+                    return f"-> {file_name}: Unable to parse JSON file (error: {str(e)[:100]})"
+        
+        return f"-> {file_name} has auto-generated json schema:\n" + builder.to_json(indent=2)
+    except Exception as e:
+        return f"-> {file_name}: Error reading file (error: {str(e)[:100]})"
 
 
 def generate(base_path, include_file_details=True, simple=True):
