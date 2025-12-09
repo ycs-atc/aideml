@@ -38,6 +38,7 @@ def query(
     temperature: float | None = None,
     max_tokens: int | None = None,
     func_spec: FunctionSpec | None = None,
+    seed: int | None = None,
     **model_kwargs,
 ) -> OutputType:
     """
@@ -60,6 +61,7 @@ def query(
         "model": model,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "seed": seed,
     }
 
     provider = determine_provider(model)
