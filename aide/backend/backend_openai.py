@@ -77,7 +77,18 @@ def query(
     # Use different API based on whether this is a non-OpenAI model with custom base URL
     model_name = filtered_kwargs.get("model", "")
     is_openai_model = re.match(r"^(gpt-|o\d-|codex-mini-latest$)", model_name)
-    use_chat_api = os.getenv("OPENAI_BASE_URL") is not None and not is_openai_model
+    
+    # OPENAI_USE_CHAT_API=true forces Chat Completions API even for OpenAI models
+    # This is useful when:
+    # 1. Using a third-party API that's compatible with Chat Completions but not Responses API
+    # 2. Need to use 'seed' parameter (only supported in Chat Completions API)
+    force_chat_api = os.getenv("OPENAI_USE_CHAT_API", "").lower() == "true"
+    use_chat_api = (os.getenv("OPENAI_BASE_URL") is not None and not is_openai_model) or force_chat_api
+
+    # Remove seed for Responses API (only supported in Chat Completions API)
+    # The Responses API used for GPT-5/O1 models doesn't support seed parameter
+    if not use_chat_api:
+        filtered_kwargs.pop("seed", None)
 
     if use_chat_api:
         _setup_custom_client()

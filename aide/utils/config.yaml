@@ -45,11 +45,13 @@ agent:
   code:
     model: gpt-5
     temp: 0.5
+    seed: null  # Set to an integer (e.g., 42) for deterministic outputs
 
   # LLM settings for evaluating program output / tracebacks
   feedback:
     model: gpt-4.1-mini  # Use GPT-4 instead of GPT-5 for better function calling support
     temp: 0.5
+    seed: null  # Set to an integer (e.g., 42) for deterministic outputs
 
   # hyperparameters for the tree search
   search:
