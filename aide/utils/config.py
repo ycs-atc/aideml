@@ -30,6 +30,7 @@ logger.setLevel(logging.DEBUG)
 class StageConfig:
     model: str
     temp: float
+    seed: int | None = None  # Optional seed for deterministic LLM outputs
 
 
 @dataclass
