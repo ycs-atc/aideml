@@ -28,6 +28,8 @@ torchaudio
 torchtext
 
 lightgbm
+xgboost
+statsmodels
 matplotlib
 seaborn
 
@@ -83,6 +85,7 @@ torchmetrics
 pytorch-lightning
 sympy
 timm
+torch-geometric
 torchinfo
 pdf2image
 PyPDF
