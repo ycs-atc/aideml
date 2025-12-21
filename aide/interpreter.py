@@ -185,21 +185,30 @@ class Interpreter:
         try:
             # Reduce grace period from 2 seconds to 0.5
             self.process.terminate()
-            self.process.join(timeout=0.5)
+            self.process.join(timeout=5)
 
             if self.process.exitcode is None:
                 logger.warning("Process failed to terminate, killing immediately")
                 self.process.kill()
-                self.process.join(timeout=0.5)
+                self.process.join(timeout=5)
 
                 if self.process.exitcode is None:
                     logger.error("Process refuses to die, using SIGKILL")
                     os.kill(self.process.pid, signal.SIGKILL)
+                    # Wait for SIGKILL to take effect
+                    self.process.join(timeout=10.0)
+                    if self.process.exitcode is None:
+                        logger.error("Process still alive after SIGKILL, waiting longer...")
+                        self.process.join(timeout=10.0)
         except Exception as e:
             logger.error(f"Error during process cleanup: {e}")
         finally:
             if self.process is not None:
-                self.process.close()
+                # Only close if process has actually terminated
+                if self.process.exitcode is not None or not self.process.is_alive():
+                    self.process.close()
+                else:
+                    logger.warning("Process still alive, cannot close. Will be cleaned up by OS.")
                 self.process = None
 
     def run(self, code: str, reset_session=True) -> ExecutionResult:
