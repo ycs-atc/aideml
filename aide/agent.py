@@ -323,8 +323,15 @@ class Agent:
         )
 
         # if the metric isn't a float then fill the metric with the worst metric
-        if not isinstance(response["metric"], float):
+        # Also handle cases where the LLM doesn't return the expected keys
+        if "metric" not in response or not isinstance(response.get("metric"), float):
             response["metric"] = None
+        if "lower_is_better" not in response:
+            response["lower_is_better"] = True  # Default to lower is better (e.g., RMSE)
+        if "is_bug" not in response:
+            response["is_bug"] = True  # Assume bug if key is missing
+        if "summary" not in response:
+            response["summary"] = "Unable to parse execution result"
 
         node.analysis = response["summary"]
         node.is_buggy = (
