@@ -213,12 +213,15 @@ def generate(base_path, include_file_details=True, simple=True):
             elif fn.suffix == ".json":
                 out.append(preview_json(fn, file_name))
             elif fn.suffix in plaintext_files:
-                if get_file_len_size(fn)[0] < 30:
-                    with open(fn) as f:
+                # Read all plaintext files (no arbitrary line limit)
+                try:
+                    with open(fn, encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                         if fn.suffix in code_files:
                             content = f"```\n{content}\n```"
                         out.append(f"-> {file_name} has content:\n\n{content}")
+                except Exception as e:
+                    out.append(f"-> {file_name}: Error reading file ({str(e)[:50]})")
 
     result = "\n\n".join(out)
 
