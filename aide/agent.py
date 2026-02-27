@@ -299,6 +299,15 @@ class Agent:
 
         node.absorb_exec_result(exec_result)
 
+        joined_out = "".join(exec_result.term_out or [])
+        logger.info(
+            "Agent exec_result: exc_type=%s, chunks=%d, joined_len=%d, preview=%r",
+            exec_result.exc_type,
+            len(exec_result.term_out or []),
+            len(joined_out),
+            joined_out[:500],
+        )
+
         prompt = {
             "Introduction": (
                 "You are a Kaggle grandmaster attending a competition. "
@@ -310,17 +319,26 @@ class Agent:
             "Execution output": wrap_code(node.term_out, lang=""),
         }
 
-        response = cast(
-            dict,
-            query(
+        logger.debug(
+            "Agent: Execution output for review (len=%d): %r",
+            len(node.term_out),
+            node.term_out[:500],
+        )
+
+        response_raw = query(
                 system_message=prompt,
                 user_message=None,
                 func_spec=review_func_spec,
                 model=self.acfg.feedback.model,
                 temperature=self.acfg.feedback.temp,
                 seed=self.acfg.feedback.seed,
-            ),
-        )
+            )
+        
+        if isinstance(response_raw, dict):
+            response = response_raw
+        else:
+            logger.error(f"model does not produce expected response format {response_raw}")
+            raise ValueError("agent does not return expected response format")
 
         # if the metric isn't a float then fill the metric with the worst metric
         # Also handle cases where the LLM doesn't return the expected keys
