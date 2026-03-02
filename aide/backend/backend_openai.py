@@ -136,19 +136,61 @@ def query(
                 **filtered_kwargs,
             )
     except openai.BadRequestError as e:
-        # Check whether the error indicates that function calling is not supported
-        if "function calling" in str(e).lower() or "tools" in str(e).lower():
+        error_str = str(e).lower()
+        if "tool_choice" in error_str and func_spec is not None:
+            # Model rejects nested tool_choice format — retry with flat format
             logger.warning(
-                "Function calling was attempted but is not supported by this model. "
+                "tool_choice rejected (likely nested format). "
+                "Retrying with flat tool_choice format."
+            )
+            filtered_kwargs["tool_choice"] = func_spec.openai_tool_choice_flat_dict
+            try:
+                if use_chat_api:
+                    client_to_use = _custom_client if _custom_client else _client
+                    response = backoff_create(
+                        client_to_use.chat.completions.create,
+                        OPENAI_TIMEOUT_EXCEPTIONS,
+                        messages=messages,
+                        **filtered_kwargs,
+                    )
+                else:
+                    response = backoff_create(
+                        _client.responses.create,
+                        OPENAI_TIMEOUT_EXCEPTIONS,
+                        input=messages,
+                        **filtered_kwargs,
+                    )
+            except openai.BadRequestError:
+                # Flat format also failed — fall back to no tools
+                logger.warning(
+                    "Flat tool_choice also rejected. "
+                    "Falling back to plain text generation."
+                )
+                filtered_kwargs.pop("tools", None)
+                filtered_kwargs.pop("tool_choice", None)
+                if use_chat_api:
+                    client_to_use = _custom_client if _custom_client else _client
+                    response = backoff_create(
+                        client_to_use.chat.completions.create,
+                        OPENAI_TIMEOUT_EXCEPTIONS,
+                        messages=messages,
+                        **filtered_kwargs,
+                    )
+                else:
+                    response = backoff_create(
+                        _client.responses.create,
+                        OPENAI_TIMEOUT_EXCEPTIONS,
+                        input=messages,
+                        **filtered_kwargs,
+                    )
+        elif "function calling" in error_str or "tools" in error_str:
+            logger.warning(
+                "Function calling not supported by this model. "
                 "Falling back to plain text generation."
             )
-            # Remove function-calling parameters and retry
             filtered_kwargs.pop("tools", None)
             filtered_kwargs.pop("tool_choice", None)
-
-            # Retry without function calling
             if use_chat_api:
-                # Use custom client if available, otherwise fall back to default
                 client_to_use = _custom_client if _custom_client else _client
                 response = backoff_create(
                     client_to_use.chat.completions.create,
@@ -164,7 +206,6 @@ def query(
                     **filtered_kwargs,
                 )
         else:
-            # If it's some other error, re-raise
             raise
 
     req_time = time.time() - t0

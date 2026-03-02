@@ -89,6 +89,14 @@ class FunctionSpec(DataClassJsonMixin):
         }
 
     @property
+    def openai_tool_choice_flat_dict(self):
+        """Flat format for newer models (e.g. gpt-5.3-codex) that reject the nested format."""
+        return {
+            "type": "function",
+            "name": self.name,
+        }
+
+    @property
     def as_anthropic_tool_dict(self):
         """Convert to Anthropic's tool format."""
         return {
