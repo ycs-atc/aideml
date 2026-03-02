@@ -21,7 +21,7 @@ import humanize
 from dataclasses_json import DataClassJsonMixin
 
 logger = logging.getLogger("aide")
-
+logger.setLevel(logging.DEBUG)
 
 @dataclass
 class ExecutionResult(DataClassJsonMixin):
@@ -138,12 +138,23 @@ class Interpreter:
         global_scope: dict = {}
         while True:
             code = code_inq.get()
+            logger.debug(
+                "REPL child: received code (len=%d), working_dir=%s, agent_file=%s",
+                len(code),
+                self.working_dir,
+                self.agent_file_name,
+            )
             os.chdir(str(self.working_dir))
             with open(self.agent_file_name, "w") as f:
                 f.write(code)
 
             event_outq.put(("state:ready",))
             try:
+                logger.debug(
+                    "REPL child: starting exec of %s in %s",
+                    self.agent_file_name,
+                    self.working_dir,
+                )
                 exec(compile(code, self.agent_file_name, "exec"), global_scope)
             except BaseException as e:
                 tb_str, e_cls_name, exc_info, exc_stack = exception_summary(
@@ -152,18 +163,24 @@ class Interpreter:
                     self.agent_file_name,
                     self.format_tb_ipython,
                 )
+                logger.debug(
+                    "REPL child: exception during exec: %s, sending traceback to parent",
+                    e_cls_name,
+                )
                 result_outq.put(tb_str)
                 if e_cls_name == "KeyboardInterrupt":
                     e_cls_name = "TimeoutError"
 
                 event_outq.put(("state:finished", e_cls_name, exc_info, exc_stack))
             else:
+                logger.debug("REPL child: exec finished without exception")
                 event_outq.put(("state:finished", None, None, None))
 
             # remove the file after execution (otherwise it might be included in the data preview)
             os.remove(self.agent_file_name)
 
             # put EOF marker to indicate that we're done
+            logger.debug("REPL child: sending EOF marker to parent")
             result_outq.put("<|EOF|>")
 
     def create_process(self) -> None:
@@ -291,6 +308,22 @@ class Interpreter:
                         exec_time = self.timeout
                         break
 
+        try:
+            qsize_repr = (
+                self.result_outq.qsize()
+                if hasattr(self.result_outq, "qsize")
+                else "n/a"
+            )
+        except NotImplementedError:
+            qsize_repr = "n/a"
+
+        logger.debug(
+            "REPL parent: child finished, state=%r, exec_time=%.3fs, result_qsize=%s",
+            state,
+            exec_time,
+            qsize_repr,
+        )
+
         output: list[str] = []
         # read all stdout/stderr from child up to the EOF marker
         # waiting until the queue is empty is not enough since
@@ -305,7 +338,16 @@ class Interpreter:
                 output.append(self.result_outq.get(timeout=1))
             except queue.Empty:
                 continue
-        output.pop()  # remove the EOF marker
+        # Only remove the EOF marker if we received it (avoids dropping real output on timeout)
+        if output and output[-1] == "<|EOF|>":
+            output.pop()
+
+        logger.debug(
+            "REPL parent: collected %d chunks from result_outq, exc_type=%s, first_chunk_preview=%r",
+            len(output),
+            state[1] if len(state) > 1 else None,
+            (output[0][:500] if output else None),
+        )
 
         e_cls_name, exc_info, exc_stack = state[1:]
 

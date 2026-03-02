@@ -177,7 +177,12 @@ class Journal(DataClassJsonMixin):
                 return None
         else:
             nodes = self.nodes
-        return max(nodes, key=lambda n: n.metric)
+        maximize_nodes = [n for n in nodes if n.metric.maximize]
+        minimize_nodes = [n for n in nodes if not n.metric.maximize]
+        if len(maximize_nodes) > len(minimize_nodes):
+            return max(maximize_nodes, key=lambda n: n.metric)
+        else:
+            return min(minimize_nodes, key=lambda n: n.metric)
 
     def generate_summary(self, include_code: bool = False) -> str:
         """Generate a summary of the journal for the agent."""

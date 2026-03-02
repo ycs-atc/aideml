@@ -1,5 +1,7 @@
+import json
 import logging
 import random
+import re
 from typing import Any, Callable, cast
 
 import humanize
@@ -294,6 +296,54 @@ class Agent:
         )
         self.journal.append(result_node)
 
+    @staticmethod
+    def _try_parse_review_response(response_raw: str) -> dict:
+        """Attempt to extract a review dict from a plain-text model response.
+
+        Some models (e.g. Amazon Nova) don't support function/tool calling and
+        return plain text instead. This method tries increasingly lenient
+        strategies to recover a usable review dict.
+
+        Raises ValueError if no valid JSON dict can be extracted.
+        """
+        text = (response_raw or "").strip()
+        if not text:
+            raise ValueError("agent does not return expected response format (empty response)")
+
+        # Strategy 1: the entire response is valid JSON
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                logger.info("Parsed review response from raw JSON text")
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Strategy 2: strip markdown code fences (```json ... ``` or ``` ... ```)
+        fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+        if fence_match:
+            try:
+                parsed = json.loads(fence_match.group(1).strip())
+                if isinstance(parsed, dict):
+                    logger.info("Extracted review response from markdown-fenced JSON")
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Strategy 3: find a JSON object embedded in the text
+        json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group())
+                if isinstance(parsed, dict):
+                    logger.info("Extracted review response from embedded JSON")
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        logger.error(f"model does not produce expected response format {response_raw}")
+        raise ValueError("agent does not return expected response format")
+
     def parse_exec_result(self, node: Node, exec_result: ExecutionResult):
         logger.info(f"Agent is parsing execution results for node {node.id}")
 
@@ -337,8 +387,8 @@ class Agent:
         if isinstance(response_raw, dict):
             response = response_raw
         else:
-            logger.error(f"model does not produce expected response format {response_raw}")
-            raise ValueError("agent does not return expected response format")
+            # Model didn't use function calling — try to parse the text as JSON
+            response = self._try_parse_review_response(response_raw)
 
         # if the metric isn't a float then fill the metric with the worst metric
         # Also handle cases where the LLM doesn't return the expected keys
